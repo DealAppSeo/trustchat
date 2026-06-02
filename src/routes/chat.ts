@@ -30,7 +30,7 @@ export default async function chatHandler(req: Request, res: Response) {
 
   let llmResult;
   try {
-    llmResult = await callLitellm(message, model_preference);
+    llmResult = await callLitellm(message, model_preference, byok_provider);
   } catch (err) {
     console.error('Litellm error:', err);
     return res.status(504).json({ error: 'LLM service failed.' } as ChatErrorResponse);
