@@ -161,10 +161,30 @@ async function tryGemini(message: string): Promise<ProviderResult> {
 
 type Attempt = { name: string; fn: () => Promise<ProviderResult> };
 
-function buildChain(message: string, model_preference?: string): Attempt[] {
-  const pref = (model_preference || '').toLowerCase();
+/**
+ * S-WIRE 2026-06-02: map the frontend's `byok_provider` (e.g. 'openai', 'claude', 'gemini',
+ * 'groq', 'anthropic', 'google') onto the model_preference prefix buildChain understands. Before
+ * this, byok_provider was ignored and every request fell through to the default (anthropic) chain,
+ * so the provider selector did nothing.
+ */
+function providerToPref(byok_provider?: string): string | undefined {
+  const p = (byok_provider || '').toLowerCase();
+  if (!p) return undefined;
+  if (p.startsWith('openai') || p.startsWith('gpt')) return 'gpt';
+  if (p.startsWith('claude') || p.startsWith('anthropic')) return 'claude';
+  if (p.startsWith('gemini') || p.startsWith('google')) return 'gemini';
+  if (p.startsWith('groq')) return 'groq';
+  return undefined; // unknown → default chain
+}
+
+function buildChain(message: string, model_preference?: string, byok_provider?: string): Attempt[] {
+  // byok_provider takes precedence over model_preference (it's the explicit selector).
+  const pref = (providerToPref(byok_provider) ?? (model_preference || '')).toLowerCase();
   const groq: Attempt = { name: 'groq-llama', fn: () => tryGroq(message) };
 
+  if (pref.startsWith('groq')) {
+    return [groq, { name: 'openrouter-claude', fn: () => tryOpenRouter(message, 'anthropic/claude-sonnet-4.6', 'openrouter-claude') }];
+  }
   if (pref.startsWith('claude')) {
     return [
       { name: 'anthropic-direct', fn: () => tryAnthropic(message, 'claude-sonnet-4-6') },
@@ -193,8 +213,8 @@ function buildChain(message: string, model_preference?: string): Attempt[] {
   ];
 }
 
-export async function callLitellm(message: string, model_preference?: string): Promise<ProviderResult> {
-  const chain = buildChain(message, model_preference);
+export async function callLitellm(message: string, model_preference?: string, byok_provider?: string): Promise<ProviderResult> {
+  const chain = buildChain(message, model_preference, byok_provider);
   const tried: string[] = [];
   for (const step of chain) {
     tried.push(step.name);
